@@ -8,7 +8,7 @@ make
 ```
 
 ## Running the interpreter
-You have sample files in the `sample` directory. To run the file `hello.fox`, hust run :  
+You have sample files in the `sample` directory. To run the file `hello.fox`, just run :  
 ```sh
 ./fox samples/hello.fox
 ```
