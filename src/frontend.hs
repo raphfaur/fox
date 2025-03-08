@@ -6,7 +6,7 @@ import qualified Control.Applicative as Control.Monad
 import Control.Applicative (Alternative, (<|>), many, some)
 import Data.Char (ord)
 
-import Grammar ( Expr (Number, Boolean, Sum, Minus, If, Var, Let, Compare, Assign, Block))
+import Grammar ( Expr (Number, Boolean, Sum, Minus, If, Var, Let, Compare, Assign, Block, Func, Call))
 import Parser
 
 char :: Char -> Parser Char
@@ -73,10 +73,12 @@ nameChecker [] = Nothing
 nameChecker "let" = Just "Forbidden"
 nameChecker "if" = Just "Forbidden"
 nameChecker "else" = Just "Forbidden"
+nameChecker "func" = Just "Forbidden"
 nameChecker (x:xs)  | x == '(' = Just $ show x  ++ "not allowed in variable name"
                     | x == ')' = Just $ show x  ++ "not allowed in variable name"
                     | x == '{' = Just $ show x  ++ "not allowed in variable name"
                     | x == '}' = Just $ show x  ++ "not allowed in variable name"
+                    | x == ',' = Just $ show x  ++ "not allowed in variable name"
                     | otherwise = nameChecker xs
 
 var = Parser $ \s ->
@@ -99,7 +101,7 @@ parseLet = do
     char ';'
     return $ Let id value
 
-parseExpr = parseBinOp <|> parseAssign <|> parseLitterals <|> parseIf <|> parseLet  <|> parseVar <|> parseBlock
+parseExpr = parseCall <|> parseBinOp <|> parseAssign <|> parseLitterals <|> parseIf <|> parseLet  <|> parseVar <|>  parseFunc  <|> parseBlock
 
 
 parseExpr' =  parseLitterals <|> parseIf <|> parseLet <|> parseVar
@@ -130,6 +132,63 @@ parseAssign = do
     ss
     char ';'
     return $ Assign v e
+
+parseArg = do 
+    ss
+    name <- varName
+    ss
+    char ','
+    ss
+    return name
+
+parseEmptyArgs :: Parser [String]
+parseEmptyArgs = do
+    char '('
+    ss
+    char ')'
+    return []
+
+parseArgs = do 
+    ss
+    char '('
+    ss
+    args <- many parseArg
+    ss
+    char ')'
+    ss
+    return args
+
+parseFunc = do
+    string "func"
+    ss
+    name <- varName
+    ss
+    args <- parseEmptyArgs <|> parseArgs
+    ss
+    block <- parseBlock
+    ss
+    return $ Func name args block
+
+parseCall = do
+    ss
+    n <- varName
+    ss
+    char '('
+    ss
+    e <- many parseCallArgs
+    ss
+    char ')'
+    ss
+    char ';'
+    ss
+    return $ Call n e
+
+parseCallArgs = do
+    e <- parseExpr
+    ss
+    char ','
+    ss
+    return e
 
 parseBlock = do
     char '{'
