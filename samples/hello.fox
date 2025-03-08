@@ -1,7 +1,5 @@
-let a = 4;
-
-if (a == 4) {
-    let b = 5 + 5;
-} else {
-    let b = 3;
+func sum ( x , y , ) {
+    return x + y ;
 }
+
+let a = sum ( 4, 5 ,) ;;

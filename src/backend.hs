@@ -1,10 +1,11 @@
 module Backend (State, Variables (Dict), empty , evalExpr, newExpr, runState, parseAll) where
 
 import Grammar
-    ( Expr(If, Number, Boolean, Var, Let, Sum, Minus, Compare, Block, Assign) )
-import Data.Map (insert, Map, (!), empty)
+    ( Expr(If, Number, Boolean, Var, Let, Sum, Minus, Compare, Block, Assign, Func, Call, Return) )
+import Data.Map (insert, Map, (!), empty, delete)
 import Control.Exception (evaluate)
 import Frontend (parseAll)
+import Debug.Trace
 
 data Numeric = Float | Int
 
@@ -12,7 +13,7 @@ type VarIndex = [String]
 
 type VarValue = [Int]
 
-newtype Variables = Dict {unDict :: Map String Int} deriving (Show)
+data Variables = Dict {vars :: Map String Int, func :: Map String ([String], Expr)} deriving (Show)
 
 newtype State o a = State {runState :: o -> Maybe (a, o)}
 
@@ -38,21 +39,40 @@ instance Monad (State o) where
         (a', v'') <- (runState $ f a) v'
         return (a', v'')
 
+delVar:: String -> Variables -> Variables
+delVar name (Dict m fn) = Dict (delete name m) fn
+
 setVar:: String -> Int -> Variables -> Variables
-setVar name value (Dict m) = Dict $ insert name value m
+setVar name value (Dict m fn) = Dict (insert name value m) fn
 
 getVar:: String -> Variables -> Int
-getVar s (Dict d) = d ! s
+getVar s (Dict d _) = d ! s
 
+getVarFn :: String -> Variables -> ([String], Expr)
+getVarFn s (Dict _ fn) = fn ! s
 
 get:: String -> State Variables Int
 get s = State $ \v -> do
     return (getVar s v, v)
 
+getFn:: String -> State Variables ([String], Expr)
+getFn s = State $ \v -> do
+    return (getVarFn s v, v)
+
 assign :: String -> Int -> State Variables Int
 assign s value = State $ \v -> do
     return (value, setVar s value v)
 
+del :: String -> State Variables Int
+del s = State $ \v -> do
+    return (0, delVar s v)
+
+setFn :: String -> [String] -> Expr -> Variables -> Variables
+setFn name args expr (Dict v f) = Dict v (insert name (args, expr) f)
+
+define :: String -> [String] -> Expr -> State Variables Int
+define name args expr = State $ \v -> do
+    return (0, setFn name args expr v)
 
 evalExpr:: Expr -> State Variables Int
 evalExpr (Number n) = return n
@@ -69,9 +89,48 @@ evalExpr (If a b c) = do
         1 -> evalExpr b
 evalExpr (Block []) = return 0
 evalExpr (Block (e:exprs)) = do 
-    evalExpr e
-    evalExpr $ Block exprs
+    case e of 
+        Return e -> do 
+            evalExpr e
+        _ -> do 
+            evalExpr e
+            evalExpr $ Block exprs
 evalExpr (Assign ident expr) = evalExpr expr >>= assign ident
+evalExpr (Func ident args expr) = define ident args expr
+evalExpr (Call ident args) = do
+    (idents, exprs) <- wrapBadType ident
+    oldenv <- getEnv
+    setUpEnv args idents
+    v <- evalExpr $ Block exprs
+    unSetEnv idents
+    return v
+
+getEnv :: State Variables Variables
+getEnv = State $ \s ->
+    Just (s,s)
+
+setEnv :: Variables -> State Variables Int
+setEnv v = State $ \s ->
+    Just (0, v)
+
+wrapBadType :: String -> State Variables ([String], [Expr])
+wrapBadType ident = State $ \s ->
+    case runState (getFn ident) s of 
+        Just ((idents, Block b), s') -> Just ((idents, b), s')
+        _ -> Nothing
+
+setUpEnv :: [Expr] -> [String] -> State Variables Int
+setUpEnv [] [] = return 0
+setUpEnv (e:es) (s:ss) = do
+    eval <- evalExpr e
+    assign s eval
+    setUpEnv es ss
+
+unSetEnv :: [String] -> State Variables Int
+unSetEnv [] = return 0
+unSetEnv (s:ss) = do
+    del s
+    unSetEnv ss
 
 newExpr:: State Variables Int -> Int -> State Variables Int
 newExpr s _ = s

@@ -6,7 +6,7 @@ import qualified Control.Applicative as Control.Monad
 import Control.Applicative (Alternative, (<|>), many, some)
 import Data.Char (ord)
 
-import Grammar ( Expr (Number, Boolean, Sum, Minus, If, Var, Let, Compare, Assign, Block, Func, Call))
+import Grammar ( Expr (Number, Boolean, Sum, Minus, If, Var, Let, Compare, Assign, Block, Func, Call, Return))
 import Parser
 
 char :: Char -> Parser Char
@@ -73,6 +73,7 @@ nameChecker [] = Nothing
 nameChecker "let" = Just "Forbidden"
 nameChecker "if" = Just "Forbidden"
 nameChecker "else" = Just "Forbidden"
+nameChecker "return" = Just "Forbidden"
 nameChecker "func" = Just "Forbidden"
 nameChecker (x:xs)  | x == '(' = Just $ show x  ++ "not allowed in variable name"
                     | x == ')' = Just $ show x  ++ "not allowed in variable name"
@@ -101,7 +102,7 @@ parseLet = do
     char ';'
     return $ Let id value
 
-parseExpr = parseCall <|> parseBinOp <|> parseAssign <|> parseLitterals <|> parseIf <|> parseLet  <|> parseVar <|>  parseFunc  <|> parseBlock
+parseExpr = parseReturn <|> parseCall <|> parseBinOp <|> parseAssign <|> parseLitterals <|> parseIf <|> parseLet  <|> parseVar <|>  parseFunc  <|> parseBlock
 
 
 parseExpr' =  parseLitterals <|> parseIf <|> parseLet <|> parseVar
@@ -197,6 +198,15 @@ parseBlock = do
     ss
     char '}'
     return $ Block ex
+
+parseReturn = do
+    string "return" 
+    ss
+    e <- parseExpr
+    ss
+    char ';'
+    ss
+    return $ Return e
 
 parseAll s = case runParser parseBlock ("{" ++ s ++ "}") of 
     (Just (e, v)) -> e
