@@ -5,7 +5,7 @@ import Control.Applicative qualified as Control.Monad
 import Control.Monad
 import Control.Monad qualified as Control
 import Data.Char (ord)
-import Grammar (Expr (Assign, Block, Boolean, Call, Compare, Func, If, Let, Minus, Number, Return, Sum, Var))
+import Grammar (Expr (Assign, Block, Boolean, Call, Compare, Func, If, Let, Minus, Number, Return, Sum, Var, CallBlock))
 import Parser
 
 char :: Char -> Parser Char
@@ -93,6 +93,7 @@ nameChecker (x : xs)
   | x == '{' = Just $ show x ++ "not allowed in variable name"
   | x == '}' = Just $ show x ++ "not allowed in variable name"
   | x == ',' = Just $ show x ++ "not allowed in variable name"
+  | x == '+' = Just $ show x ++ "not allowed in variable name"
   | otherwise = nameChecker xs
 
 var = Parser $ \s ->
@@ -117,7 +118,7 @@ parseLet = do
 
 parseExpr = parseReturn <|> parseCall <|> parseBinOp <|> parseAssign <|> parseLitterals <|> parseIf <|> parseLet <|> parseVar <|> parseFunc <|> parseBlock
 
-parseExpr' = parseLitterals <|> parseIf <|> parseLet <|> parseVar
+parseExpr' = parseCall <|> parseLitterals <|> parseIf <|> parseLet  <|> parseVar
 
 parseBinOp = do
   a <- parseTerm
@@ -125,6 +126,7 @@ parseBinOp = do
   op <- char '+' *> pure Sum <|> char '-' *> pure Minus <|> string "==" *> pure Compare
   ss
   b <- parseTerm
+  ss
   return $ op a b
 
 parseTerm =
@@ -137,7 +139,12 @@ parseTerm =
       ss
       return e
   )
-    <|> parseExpr'
+    <|> ( do
+      ss
+      e <- parseExpr'
+      ss
+      return e
+      )
 
 parseAssign = do
   v <- varName
@@ -181,7 +188,7 @@ parseFunc = do
   ss
   args <- parseEmptyArgs <|> parseArgs
   ss
-  block <- parseBlock
+  block <- parseCallBlock
   ss
   return $ Func name args block
 
@@ -194,8 +201,6 @@ parseCall = do
   e <- many parseCallArgs
   ss
   char ')'
-  ss
-  char ';'
   ss
   return $ Call n e
 
@@ -213,6 +218,14 @@ parseBlock = do
   ss
   char '}'
   return $ Block ex
+
+parseCallBlock = do
+  char '{'
+  ss
+  ex <- many (parseExpr <* ss)
+  ss
+  char '}'
+  return $ CallBlock ex
 
 parseReturn = do
   string "return"

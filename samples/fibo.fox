@@ -1,0 +1,19 @@
+func fibo (n , ) {
+    let res = 0;
+
+    if ( n == 0 ) {
+        res = 0 ;
+    } else { 
+        if  ( n == 1 ){
+            res = 1 ;
+        } else {
+            let f = fibo ( n - 1 , ) ;
+            let g = fibo (n - 2 , ) ;
+            res = g + f ;
+        }
+    }
+
+    return res ;
+}
+
+let bob = fibo ( 12 , ) ;

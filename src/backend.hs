@@ -1,12 +1,13 @@
-module Backend (State, Variables (Dict), empty, evalExpr, newExpr, runState, parseAll) where
+module Backend (State, Env (Dict), empty, evalExpr, newExpr, runState, parseAll) where
 
 import Control.Exception (evaluate)
 import Data.Map (Map, delete, empty, insert, (!))
 import Debug.Trace
 import Frontend (parseAll)
 import Grammar
-  ( Expr (Assign, Block, Boolean, Call, Compare, Func, If, Let, Minus, Number, Return, Sum, Var),
+  ( Expr (Assign, Block, Boolean, Call, Compare, Func, If, Let, Minus, Number, Return, Sum, Var, CallBlock),
   )
+  
 
 data Numeric = Float | Int
 
@@ -14,7 +15,13 @@ type VarIndex = [String]
 
 type VarValue = [Int]
 
-data Variables = Dict {vars :: Map String Int, func :: Map String ([String], Expr)} deriving (Show)
+data Env = Dict {vars :: Map String Int, func :: Map String ([String], Expr)} deriving (Show)
+
+type Envs = [Env]
+
+type GlobalEnv = Env
+
+type Context = ([Env], GlobalEnv)
 
 newtype State o a = State {runState :: o -> Maybe (a, o)}
 
@@ -40,42 +47,108 @@ instance Monad (State o) where
     (a', v'') <- (runState $ f a) v'
     return (a', v'')
 
-delVar :: String -> Variables -> Variables
-delVar name (Dict m fn) = Dict (delete name m) fn
+-----------------
+-- Env helpers --
+-----------------
 
-setVar :: String -> Int -> Variables -> Variables
+-- Misc --
+
+applyGlobalEnv :: (Env -> Env) -> Context -> Context
+applyGlobalEnv f (locals, global) = (locals, f global)
+
+applyLocalEnv :: (Env -> Env) -> Context -> Context
+applyLocalEnv f (local:others, global) = (f local:others, global)
+
+getLocalEnv :: Context -> Env
+getLocalEnv (env:_, _) = env
+
+getGlobalEnv :: Context -> Env
+getGlobalEnv (_, global) = global
+
+-- Env modifiers --
+
+setVar :: String -> Int -> Env -> Env
 setVar name value (Dict m fn) = Dict (insert name value m) fn
 
-getVar :: String -> Variables -> Int
-getVar s (Dict d _) = d ! s
+delVar :: String -> Env -> Env
+delVar name (Dict m fn) = Dict (delete name m) fn
 
-getVarFn :: String -> Variables -> ([String], Expr)
-getVarFn s (Dict _ fn) = fn ! s
-
-get :: String -> State Variables Int
-get s = State $ \v -> do
-  return (getVar s v, v)
-
-getFn :: String -> State Variables ([String], Expr)
-getFn s = State $ \v -> do
-  return (getVarFn s v, v)
-
-assign :: String -> Int -> State Variables Int
-assign s value = State $ \v -> do
-  return (value, setVar s value v)
-
-del :: String -> State Variables Int
-del s = State $ \v -> do
-  return (0, delVar s v)
-
-setFn :: String -> [String] -> Expr -> Variables -> Variables
+setFn :: String -> [String] -> Expr -> Env -> Env
 setFn name args expr (Dict v f) = Dict v (insert name (args, expr) f)
 
-define :: String -> [String] -> Expr -> State Variables Int
-define name args expr = State $ \v -> do
-  return (0, setFn name args expr v)
+-- Env getters --
 
-evalExpr :: Expr -> State Variables Int
+getVar :: String -> Env -> Int
+getVar s (Dict d _) =  d ! s
+
+getVarFn :: String -> Env -> ([String], Expr)
+getVarFn s (Dict _ fn) = fn ! s
+
+-- Env actions --
+
+get :: String -> State Context Int
+get s = State $ \context -> do
+  return (getVar s (getLocalEnv context) , context)
+
+getFn :: String -> State Context ([String], Expr)
+getFn s = State $ \context -> do
+  return (getVarFn s (getGlobalEnv context), context)
+
+assign :: String -> Int -> State Context Int
+assign s value = State $ \context -> do
+  return (value, applyLocalEnv (setVar s value) context)
+
+del :: String -> State Context Int
+del s = State $ \context -> do
+  return (0, applyLocalEnv (delVar s) context)
+
+define :: String -> [String] -> Expr -> State Context Int
+define name args expr = State $ \context -> do
+  return (0, applyGlobalEnv (setFn name args expr) context)
+
+getEnv :: State Envs Envs
+getEnv = State $ \s ->
+  Just (s, s)
+
+evalAllExpr :: [Expr] -> State Context [Int]
+evalAllExpr = mapM evalExpr
+
+setUpEnv :: [Int] -> [String] -> State Context Int
+setUpEnv [] [] = return 0
+setUpEnv (i : is) (s : ss) = do
+  assign s i
+  setUpEnv is ss
+
+delEnv :: Envs -> Envs
+delEnv (e:others) = others
+
+addEnv :: Envs -> Envs
+addEnv envs = Dict empty empty : envs
+
+delLocalEnv :: Context -> Context
+delLocalEnv (locals, global) = (delEnv locals, global)
+
+addLocalEnv :: Context -> Context
+addLocalEnv (locals, global) = (addEnv locals, global)
+
+destroyLocalEnv :: State Context Int
+destroyLocalEnv = State $ \context ->
+  Just (0, delLocalEnv $ trace ("Exiting context : " ++ show context) context)
+
+createLocalEnv :: State Context Int
+createLocalEnv = State $ \context ->
+  Just (0, addLocalEnv context)
+
+returnCall :: Int -> State Context Int
+returnCall v = do
+  destroyLocalEnv
+  return v
+
+-----------------
+-- Interpreter --
+-----------------
+
+evalExpr :: Expr -> State Context Int
 evalExpr (Number n) = return n
 evalExpr (Boolean b) = return $ fromEnum b
 evalExpr (Var ident) = get ident
@@ -83,55 +156,44 @@ evalExpr (Let ident expr) = evalExpr expr >>= assign ident
 evalExpr (Sum a b) = ((+) <$> evalExpr a) <*> evalExpr b
 evalExpr (Minus a b) = ((-) <$> evalExpr a) <*> evalExpr b
 evalExpr (Compare a b) = fromEnum <$> (((==) <$> evalExpr a) <*> evalExpr b)
+evalExpr (Assign ident expr) = evalExpr expr >>= assign ident
+evalExpr (Func ident args expr) = define ident args expr
+
 evalExpr (If a b c) = do
   res <- evalExpr a
   case res of
     0 -> evalExpr c
     1 -> evalExpr b
+
 evalExpr (Block []) = return 0
 evalExpr (Block (e : exprs)) = do
+      evalExpr e
+      evalExpr $ Block exprs
+
+evalExpr (CallBlock []) = return 0
+evalExpr (CallBlock (e : exprs)) = do
   case e of
     Return e -> do
       evalExpr e
     _ -> do
       evalExpr e
-      evalExpr $ Block exprs
-evalExpr (Assign ident expr) = evalExpr expr >>= assign ident
-evalExpr (Func ident args expr) = define ident args expr
+      evalExpr $ CallBlock exprs
+
 evalExpr (Call ident args) = do
   (idents, exprs) <- wrapBadType ident
-  oldenv <- getEnv
-  setUpEnv args idents
-  v <- evalExpr $ Block exprs
-  unSetEnv idents
-  return v
+  evaluatedArgs <- evalAllExpr args
+  createLocalEnv
+  setUpEnv evaluatedArgs (trace (" Setting up idents : " ++ show idents) idents)
+  v <- evalExpr $ CallBlock exprs
+  returnCall v
 
-getEnv :: State Variables Variables
-getEnv = State $ \s ->
-  Just (s, s)
+-- Pseudo Error Handling --
 
-setEnv :: Variables -> State Variables Int
-setEnv v = State $ \s ->
-  Just (0, v)
-
-wrapBadType :: String -> State Variables ([String], [Expr])
+wrapBadType :: String -> State Context ([String], [Expr])
 wrapBadType ident = State $ \s ->
   case runState (getFn ident) s of
-    Just ((idents, Block b), s') -> Just ((idents, b), s')
+    Just ((idents, CallBlock b), s') -> Just ((idents, b), s')
     _ -> Nothing
 
-setUpEnv :: [Expr] -> [String] -> State Variables Int
-setUpEnv [] [] = return 0
-setUpEnv (e : es) (s : ss) = do
-  eval <- evalExpr e
-  assign s eval
-  setUpEnv es ss
-
-unSetEnv :: [String] -> State Variables Int
-unSetEnv [] = return 0
-unSetEnv (s : ss) = do
-  del s
-  unSetEnv ss
-
-newExpr :: State Variables Int -> Int -> State Variables Int
+newExpr :: State Context Int -> Int -> State Context Int
 newExpr s _ = s
