@@ -1,4 +1,4 @@
-module Grammar (Expr (Number, Boolean, Sum, Minus, If, Var, Let, Compare, Assign, Block, CallBlock, Func, Call, Return)) where
+module Grammar (Expr (Number, Boolean, Sum, Minus, If, Var, Let, Compare, Assign, Block, CallBlock, Func, Call, Return, Print)) where
 
 type Ident = String
 
@@ -16,5 +16,6 @@ data Expr
   | CallBlock [Expr]
   | Func Ident [Ident] Expr
   | Call Ident [Expr]
-  | Return Expr
+  | Return Expr 
+  | Print Expr
   deriving (Show)

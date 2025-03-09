@@ -6,7 +6,9 @@ import System.Directory.Internal.Prelude (getArgs)
 run :: String -> IO ()
 run file = do
   s <- readFile file
-  let res = runState (evalExpr $ parseAll s) ([Dict empty empty], Dict empty empty) in print res
+  let res = runState (evalExpr $ parseAll s) ([Dict empty empty], Dict empty empty) in case res of
+    Left e -> print e
+    Right d -> print d
 
 parse :: String -> IO ()
 parse file = do

@@ -5,7 +5,7 @@ import Control.Applicative qualified as Control.Monad
 import Control.Monad
 import Control.Monad qualified as Control
 import Data.Char (ord)
-import Grammar (Expr (Assign, Block, Boolean, Call, Compare, Func, If, Let, Minus, Number, Return, Sum, Var, CallBlock))
+import Grammar (Expr (Assign, Block, Boolean, Call, Compare, Func, If, Let, Minus, Number, Return, Sum, Var, CallBlock, Print))
 import Parser
 
 char :: Char -> Parser Char
@@ -87,6 +87,7 @@ nameChecker "if" = Just "Forbidden"
 nameChecker "else" = Just "Forbidden"
 nameChecker "return" = Just "Forbidden"
 nameChecker "func" = Just "Forbidden"
+nameChecker "print" = Just "Forbidden"
 nameChecker (x : xs)
   | x == '(' = Just $ show x ++ "not allowed in variable name"
   | x == ')' = Just $ show x ++ "not allowed in variable name"
@@ -116,9 +117,9 @@ parseLet = do
   char ';'
   return $ Let id value
 
-parseExpr = parseReturn <|> parseCall <|> parseBinOp <|> parseAssign <|> parseLitterals <|> parseIf <|> parseLet <|> parseVar <|> parseFunc <|> parseBlock
+parseExpr =  parsePrint <|> parseReturn <|> parseCall <|> parseBinOp <|> parseAssign <|> parseLitterals <|> parseIf <|> parseLet <|> parseVar <|> parseFunc <|> parseBlock
 
-parseExpr' = parseCall <|> parseLitterals <|> parseIf <|> parseLet  <|> parseVar
+parseExpr' = parseCall <|> parseLitterals <|> parseIf <|> parseLet  <|> parseVar <|> parsePrint
 
 parseBinOp = do
   a <- parseTerm
@@ -235,6 +236,11 @@ parseReturn = do
   char ';'
   ss
   return $ Return e
+
+parsePrint = do 
+  string "print"
+  ss
+  Print <$> parseExpr
 
 parseAll s = case runParser parseBlock ("{" ++ s ++ "}") of
   (Just (e, v)) -> e

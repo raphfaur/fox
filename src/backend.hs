@@ -1,13 +1,12 @@
 module Backend (State, Env (Dict), empty, evalExpr, newExpr, runState, parseAll) where
 
 import Control.Exception (evaluate)
-import Data.Map (Map, delete, empty, insert, (!))
+import Data.Map (Map, delete, empty, insert, (!), lookup)
 import Debug.Trace
 import Frontend (parseAll)
 import Grammar
-  ( Expr (Assign, Block, Boolean, Call, Compare, Func, If, Let, Minus, Number, Return, Sum, Var, CallBlock),
+  ( Expr (Assign, Block, Boolean, Call, Compare, Func, If, Let, Minus, Number, Return, Sum, Var, CallBlock, Print),
   )
-  
 
 data Numeric = Float | Int
 
@@ -23,7 +22,7 @@ type GlobalEnv = Env
 
 type Context = ([Env], GlobalEnv)
 
-newtype State o a = State {runState :: o -> Maybe (a, o)}
+newtype State o a = State {runState :: o -> Either RuntimeError (a, o)}
 
 instance Functor (State o) where
   fmap :: (a -> b) -> State o a -> State o b
@@ -33,7 +32,7 @@ instance Functor (State o) where
 
 instance Applicative (State o) where
   pure :: a -> State o a
-  pure x = State $ \v -> Just (x, v)
+  pure x = State $ \v -> pure (x, v)
 
   (<*>) :: State o (a -> b) -> State o a -> State o b
   State a <*> State b = State $ \v -> do
@@ -46,6 +45,30 @@ instance Monad (State o) where
     (a, v') <- s v
     (a', v'') <- (runState $ f a) v'
     return (a', v'')
+
+--------------------
+-- Error handling --
+--------------------
+
+data RuntimeError = NameError String | ScopeError String
+
+instance Show RuntimeError where
+  show (NameError e) = color cRed "*** NameError ***\n" ++ e ++ color cRed "\n*** NameError ***"
+  show (ScopeError e) = "ScopeError"
+
+raise = Left
+
+
+type Color = String
+
+cRed = "\ESC[91m"
+cBlue = "\ESC[94m"
+cDefault = "\ESC[0m"
+
+color :: Color -> String -> String
+color c s = c ++ s ++ cDefault
+
+
 
 -----------------
 -- Env helpers --
@@ -78,21 +101,25 @@ setFn name args expr (Dict v f) = Dict v (insert name (args, expr) f)
 
 -- Env getters --
 
-getVar :: String -> Env -> Int
-getVar s (Dict d _) =  d ! s
+getVar :: String -> Env -> Maybe Int
+getVar s (Dict d _) = Data.Map.lookup s d
 
-getVarFn :: String -> Env -> ([String], Expr)
-getVarFn s (Dict _ fn) = fn ! s
+getVarFn :: String -> Env -> Maybe ([String], Expr)
+getVarFn s (Dict _ fn) = Data.Map.lookup s fn
 
 -- Env actions --
 
 get :: String -> State Context Int
 get s = State $ \context -> do
-  return (getVar s (getLocalEnv context) , context)
+  case getVar s (getLocalEnv context) of
+    Just v -> return (v, context)
+    Nothing -> raise $ NameError ("Unknwon variable " ++ s)
 
 getFn :: String -> State Context ([String], Expr)
 getFn s = State $ \context -> do
-  return (getVarFn s (getGlobalEnv context), context)
+  case getVarFn s (getGlobalEnv context) of
+    Just f -> return (f, context)
+    Nothing -> raise $ NameError ("Unknwown function " ++ color cBlue s)
 
 assign :: String -> Int -> State Context Int
 assign s value = State $ \context -> do
@@ -108,7 +135,7 @@ define name args expr = State $ \context -> do
 
 getEnv :: State Envs Envs
 getEnv = State $ \s ->
-  Just (s, s)
+  pure (s, s)
 
 evalAllExpr :: [Expr] -> State Context [Int]
 evalAllExpr = mapM evalExpr
@@ -133,11 +160,11 @@ addLocalEnv (locals, global) = (addEnv locals, global)
 
 destroyLocalEnv :: State Context Int
 destroyLocalEnv = State $ \context ->
-  Just (0, delLocalEnv $ trace ("Exiting context : " ++ show context) context)
+  pure (0, delLocalEnv $ trace ("Exiting context : " ++ show context) context)
 
 createLocalEnv :: State Context Int
 createLocalEnv = State $ \context ->
-  Just (0, addLocalEnv context)
+  pure (0, addLocalEnv context)
 
 returnCall :: Int -> State Context Int
 returnCall v = do
@@ -192,8 +219,8 @@ evalExpr (Call ident args) = do
 wrapBadType :: String -> State Context ([String], [Expr])
 wrapBadType ident = State $ \s ->
   case runState (getFn ident) s of
-    Just ((idents, CallBlock b), s') -> Just ((idents, b), s')
-    _ -> Nothing
+    Right ((idents, CallBlock b), s') -> pure ((idents, b), s')
+    Left e -> raise e
 
 newExpr :: State Context Int -> Int -> State Context Int
 newExpr s _ = s
