@@ -50,6 +50,6 @@ llc -filetype=obj samples/fox.lc -o samples/fox.o -opaque-pointers
 
 To compile the final binary (using clang): 
 ```
-clang samples/fox.o foxy
+clang samples/fox.o -o foxy
 ```
 
