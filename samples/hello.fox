@@ -1,1 +1,18 @@
-let a = 3 + 4 ;
+
+func main () {
+  let a = 0 ;
+  if ( a == 0 ) {
+    let b = a + 17 ;
+    if ( b == 5 ) {
+      let h = 4 ;
+    } else {
+      let f = 5;
+    }
+    let j = 0 ;
+  } else {
+    let res = 5;
+  }
+  return a ;
+}
+
+

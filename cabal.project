@@ -1,0 +1,5 @@
+packages: . ./llvm-hs/llvm-hs ./llvm-hs/llvm-hs-pure
+
+package fox
+    extra-include-dirs: /opt/homebrew/Cellar/zstd/1.5.7/lib
+    extra-lib-dirs: /opt/homebrew/Cellar/zstd/1.5.7/lib

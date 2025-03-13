@@ -1,7 +1,7 @@
-import Backend (State, Env (Dict), empty, evalExpr, newExpr, parseAll, runState)
-import Debug.Trace (trace)
+import Backend (Env (Dict), empty, evalExpr, parseAll, runState)
 import Frontend ()
 import System.Directory.Internal.Prelude (getArgs)
+import Codegen (compile)
 
 run :: String -> IO ()
 run file = do
@@ -15,7 +15,11 @@ parse file = do
   s <- readFile file
   print $ parseAll s
 
+main :: IO ()
 main = do
   args <- getArgs
   case args of
-    [file] -> run file
+    (cmd : file : _)  -> case cmd of 
+      "parse" -> parse file
+      "run" -> run file
+      "compile" -> compile file

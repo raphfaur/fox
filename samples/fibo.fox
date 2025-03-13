@@ -1,3 +1,4 @@
+
 func fibo (n , ) {
     let res = 0;
 
@@ -12,8 +13,12 @@ func fibo (n , ) {
             res = g + f ;
         }
     }
-
     return res ;
 }
 
-let bob = fibo ( 12 , ) ;
+func main () {
+  let bob = 48 + fibo ( 15 , );
+  print bob - 610 
+  return 0 ;
+}
+
