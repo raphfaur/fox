@@ -1,2 +1,5 @@
 objects/
 fox
+dist-newstyle
+samples/*.lc
+samples/*.o
