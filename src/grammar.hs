@@ -16,6 +16,6 @@ data Expr
   | CallBlock [Expr]
   | Func Ident [Ident] Expr
   | Call Ident [Expr]
-  | Return Expr 
+  | Return Expr
   | Print Expr
   deriving (Show)

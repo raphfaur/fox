@@ -1,8 +1,7 @@
 module Parser where
 
-import Control.Applicative qualified as Control.Monad
 import Control.Monad
-import Control.Monad qualified as Control
+import Control.Applicative
 
 newtype Parser a = Parser {runParser :: String -> Maybe (a, String)}
 
@@ -11,23 +10,21 @@ instance Control.Monad.Functor Parser where
     (o, s') <- runParser p s
     return (f o, s')
 
-instance Control.Monad.Applicative Parser where
+instance Control.Applicative.Applicative Parser where
   pure x = Parser $ \s -> Just (x, s)
 
-  (<*>) :: Parser (a -> b) -> Parser a -> Parser b
   Parser f <*> Parser a = Parser $ \s -> do
     (f', s') <- f s
     (o, s'') <- a s'
     return (f' o, s'')
 
 instance Control.Monad.Monad Parser where
-  (>>=) :: Parser a -> (a -> Parser b) -> Parser b
   Parser p >>= f = Parser $ \s -> do
     (o, s') <- p s
     (o', s'') <- (runParser $ f o) s'
     return (o', s'')
 
-instance Control.Monad.Alternative Parser where
+instance Control.Applicative.Alternative Parser where
   empty = Parser $ const Nothing
   Parser a <|> Parser b = Parser $ \s ->
     case a s of

@@ -1,9 +1,7 @@
+{-# OPTIONS_GHC -Wno-unused-do-bind #-}
 module Frontend where
 
-import Control.Applicative (Alternative, many, some, (<|>))
-import Control.Applicative qualified as Control.Monad
-import Control.Monad
-import Control.Monad qualified as Control
+import Control.Applicative (many, some, (<|>))
 import Data.Char (ord)
 import Grammar (Expr (Assign, Block, Boolean, Call, Compare, Func, If, Let, Minus, Number, Return, Sum, Var, CallBlock, Print))
 import Parser
@@ -20,7 +18,7 @@ string :: String -> Parser String
 string = mapM char
 
 ss :: Parser String
-ss = many $ (char ' ' <|> char '\n')
+ss = many (char ' ' <|> char '\n')
 
 lock :: Char -> Parser Char
 lock c = Parser charLock
@@ -37,6 +35,7 @@ until' c = many $ lock c
 -- NUMERIC
 -----------
 
+numChar :: Parser Char
 numChar =
   char '1'
     <|> char '2'
@@ -60,11 +59,13 @@ str2int = foldl mul 0
 int :: Parser Int
 int = str2int <$> intChar
 
+parseLitterals :: Parser Expr
 parseLitterals =
   (Number <$> int)
     <|> (string "True" *> pure (Boolean True))
     <|> (string "False" *> pure (Boolean False))
 
+parseIf :: Parser Expr
 parseIf = do
   string "if" *> ss
   char '('
@@ -95,8 +96,10 @@ nameChecker (x : xs)
   | x == '}' = Just $ show x ++ "not allowed in variable name"
   | x == ',' = Just $ show x ++ "not allowed in variable name"
   | x == '+' = Just $ show x ++ "not allowed in variable name"
+  | x == '\n' = Just $ show x ++ "not allowed in variable name"
   | otherwise = nameChecker xs
 
+var :: Parser String
 var = Parser $ \s ->
   let v = runParser (until' ' ') s
    in case v of
@@ -105,22 +108,28 @@ var = Parser $ \s ->
           Just _ -> Nothing
         Nothing -> Nothing
 
+varName :: Parser String
 varName = var
 
-parseVar = Var <$> varName
+parseVar :: Parser Expr
+parseVar = Var <$> var
 
+parseLet :: Parser Expr
 parseLet = do
   string "let" <* ss
-  id <- varName <* ss
+  id <- var <* ss
   char '=' <* ss
   value <- parseExpr <* ss
   char ';'
   return $ Let id value
 
+parseExpr :: Parser Expr
 parseExpr =  parsePrint <|> parseReturn <|> parseCall <|> parseBinOp <|> parseAssign <|> parseLitterals <|> parseIf <|> parseLet <|> parseVar <|> parseFunc <|> parseBlock
 
+parseExpr' :: Parser Expr
 parseExpr' = parseCall <|> parseLitterals <|> parseIf <|> parseLet  <|> parseVar <|> parsePrint
 
+parseBinOp :: Parser Expr
 parseBinOp = do
   a <- parseTerm
   ss
@@ -130,6 +139,7 @@ parseBinOp = do
   ss
   return $ op a b
 
+parseTerm :: Parser Expr
 parseTerm =
   ( do
       char '('
@@ -147,8 +157,9 @@ parseTerm =
       return e
       )
 
+parseAssign :: Parser Expr
 parseAssign = do
-  v <- varName
+  v <- var
   ss
   char '='
   ss
@@ -157,9 +168,10 @@ parseAssign = do
   char ';'
   return $ Assign v e
 
+parseArg :: Parser String
 parseArg = do
   ss
-  name <- varName
+  name <- var
   ss
   char ','
   ss
@@ -172,6 +184,7 @@ parseEmptyArgs = do
   char ')'
   return []
 
+parseArgs :: Parser [String]
 parseArgs = do
   ss
   char '('
@@ -182,10 +195,11 @@ parseArgs = do
   ss
   return args
 
+parseFunc :: Parser Expr
 parseFunc = do
   string "func"
   ss
-  name <- varName
+  name <- var
   ss
   args <- parseEmptyArgs <|> parseArgs
   ss
@@ -193,9 +207,10 @@ parseFunc = do
   ss
   return $ Func name args block
 
+parseCall :: Parser Expr
 parseCall = do
   ss
-  n <- varName
+  n <- var
   ss
   char '('
   ss
@@ -205,6 +220,7 @@ parseCall = do
   ss
   return $ Call n e
 
+parseCallArgs :: Parser Expr
 parseCallArgs = do
   e <- parseExpr
   ss
@@ -212,6 +228,7 @@ parseCallArgs = do
   ss
   return e
 
+parseBlock :: Parser Expr
 parseBlock = do
   char '{'
   ss
@@ -220,6 +237,7 @@ parseBlock = do
   char '}'
   return $ Block ex
 
+parseCallBlock :: Parser Expr
 parseCallBlock = do
   char '{'
   ss
@@ -228,6 +246,7 @@ parseCallBlock = do
   char '}'
   return $ CallBlock ex
 
+parseReturn :: Parser Expr
 parseReturn = do
   string "return"
   ss
@@ -237,10 +256,12 @@ parseReturn = do
   ss
   return $ Return e
 
-parsePrint = do 
+parsePrint :: Parser Expr
+parsePrint = do
   string "print"
   ss
   Print <$> parseExpr
 
+parseAll :: [Char] -> Expr
 parseAll s = case runParser parseBlock ("{" ++ s ++ "}") of
-  (Just (e, v)) -> e
+  (Just (e, _)) -> e
